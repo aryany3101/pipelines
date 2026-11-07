@@ -114,6 +114,49 @@ func TestResolveArtifacts_SkipsMissingOptionalComponentInput(t *testing.T) {
 	assert.Empty(t, artifacts)
 }
 
+func TestResolveArtifacts_SkipsMissingOptionalOutputFromIgnoredFailedTask(t *testing.T) {
+	parentTaskID := "parent-task"
+	opts := common.Options{
+		ParentTask:     &apiv2.PipelineTask{TaskId: parentTaskID, Name: "parent"},
+		IterationIndex: -1,
+		Run: &apiv2.Run{Tasks: []*apiv2.PipelineTask{{
+			TaskId:       "producer-task",
+			Name:         "fail",
+			ParentTaskId: util.StringPointer(parentTaskID),
+			Type:         apiv2.PipelineTask_RUNTIME,
+			State:        apiv2.PipelineTask_FAILED,
+		}}},
+		Task: &pipelinespec.PipelineTaskSpec{
+			TriggerPolicy: &pipelinespec.PipelineTaskSpec_TriggerPolicy{
+				Strategy: pipelinespec.PipelineTaskSpec_TriggerPolicy_ALL_UPSTREAM_TASKS_COMPLETED,
+			},
+			Inputs: &pipelinespec.TaskInputsSpec{
+				Artifacts: map[string]*pipelinespec.TaskInputsSpec_InputArtifactSpec{
+					"dataset": {
+						Kind: &pipelinespec.TaskInputsSpec_InputArtifactSpec_TaskOutputArtifact{
+							TaskOutputArtifact: &pipelinespec.TaskInputsSpec_InputArtifactSpec_TaskOutputArtifactSpec{
+								ProducerTask:      "fail",
+								OutputArtifactKey: "dataset",
+							},
+						},
+					},
+				},
+			},
+		},
+		Component: &pipelinespec.ComponentSpec{
+			InputDefinitions: &pipelinespec.ComponentInputsSpec{
+				Artifacts: map[string]*pipelinespec.ComponentInputsSpec_ArtifactSpec{
+					"dataset": {IsOptional: true},
+				},
+			},
+		},
+	}
+
+	artifacts, err := resolveArtifacts(opts)
+	require.NoError(t, err)
+	assert.Empty(t, artifacts)
+}
+
 func TestResolveTaskOutputArtifact_EmptyLoopProducesEmptyCollection(t *testing.T) {
 	parentTaskID := "dag-parent"
 	parentTask := &apiv2.PipelineTask{TaskId: parentTaskID, Name: "dag"}

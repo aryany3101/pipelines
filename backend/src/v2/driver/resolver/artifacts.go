@@ -195,6 +195,9 @@ func resolveTaskOutputArtifact(
 	if len(outputs) == 0 && isZeroIterationLoopTask(producerTask) {
 		return producerTask, emptyCollectedArtifactOutput(outputKey, producerTask.GetName()), nil
 	}
+	if shouldTreatMissingTaskOutputAsNull(opts, producerTask) && !hasArtifactOutput(outputs, outputKey) {
+		return producerTask, nil, ErrResolvedArtifactNull
+	}
 	outputIO, err := findArtifactByProducerKeyInList(outputKey, producerTask.GetName(), outputs, canExportIterationCollection(producerTask))
 	if err != nil {
 		return nil, nil, err
@@ -206,6 +209,15 @@ func resolveTaskOutputArtifact(
 		return nil, nil, fmt.Errorf("output artifact %s not found", outputKey)
 	}
 	return producerTask, outputIO, nil
+}
+
+func hasArtifactOutput(outputs []*apiv2.PipelineTask_InputOutputs_IOArtifact, outputKey string) bool {
+	for _, output := range outputs {
+		if output.GetArtifactKey() == outputKey {
+			return true
+		}
+	}
+	return false
 }
 
 func emptyCollectedArtifactOutput(key, producerTaskName string) *apiv2.PipelineTask_InputOutputs_IOArtifact {

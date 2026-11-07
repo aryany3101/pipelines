@@ -410,6 +410,9 @@ func resolveTaskOutputParameter(
 	if len(outputs) == 0 && isZeroIterationLoopTask(producerTask) {
 		return emptyCollectedParameterOutput(outputKey, producerTask.GetName()), nil
 	}
+	if shouldTreatMissingTaskOutputAsNull(opts, producerTask) && !hasParameterOutput(outputs, outputKey) {
+		return nil, ErrResolvedParameterNull
+	}
 	outputIO, err := findParameterByProducerKeyInList(outputKey, producerTask.GetName(), outputs, canExportIterationCollection(producerTask))
 	if err != nil {
 		return nil, err
@@ -421,6 +424,15 @@ func resolveTaskOutputParameter(
 		return nil, fmt.Errorf("output parameter %s not found", outputKey)
 	}
 	return outputIO, nil
+}
+
+func hasParameterOutput(outputs []*apiv2.PipelineTask_InputOutputs_IOParameter, outputKey string) bool {
+	for _, output := range outputs {
+		if output.GetParameterKey() == outputKey {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveParameterComponentInputParameter(

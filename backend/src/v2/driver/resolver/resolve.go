@@ -30,6 +30,19 @@ var paramError = func(paramSpec *pipelinespec.TaskInputsSpec_InputParameterSpec,
 
 var ErrResolvedParameterNull = errors.New("the resolved input is null")
 
+func shouldTreatMissingTaskOutputAsNull(opts common.Options, producerTask *apiV2.PipelineTask) bool {
+	if producerTask == nil || opts.Task.GetTriggerPolicy().GetStrategy() !=
+		pipelinespec.PipelineTaskSpec_TriggerPolicy_ALL_UPSTREAM_TASKS_COMPLETED {
+		return false
+	}
+	switch producerTask.GetState() {
+	case apiV2.PipelineTask_FAILED, apiV2.PipelineTask_SKIPPED:
+		return true
+	default:
+		return false
+	}
+}
+
 type ParameterMetadata struct {
 	// This is the key of the parameter in this task's inputs.
 	Key                string

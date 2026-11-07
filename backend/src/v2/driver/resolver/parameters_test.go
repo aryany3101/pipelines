@@ -132,6 +132,97 @@ func TestResolveTaskOutputParameter_FindsIterationScopedNonRuntimeProducer(t *te
 	}
 }
 
+func TestResolveParameters_UsesDefaultWhenIgnoredUpstreamHasNoOutput(t *testing.T) {
+	for _, state := range []apiv2.PipelineTask_TaskState{
+		apiv2.PipelineTask_FAILED,
+		apiv2.PipelineTask_SKIPPED,
+	} {
+		t.Run(state.String(), func(t *testing.T) {
+			parentTaskID := "parent-task"
+			parentTask := &apiv2.PipelineTask{TaskId: parentTaskID, Name: "parent"}
+			producerTask := &apiv2.PipelineTask{
+				TaskId:       "producer-task",
+				Name:         "fail",
+				ParentTaskId: util.StringPointer(parentTaskID),
+				Type:         apiv2.PipelineTask_RUNTIME,
+				State:        state,
+			}
+			opts := common.Options{
+				ParentTask:     parentTask,
+				Run:            &apiv2.Run{Tasks: []*apiv2.PipelineTask{producerTask}},
+				IterationIndex: -1,
+				Task: &pipelinespec.PipelineTaskSpec{
+					TriggerPolicy: &pipelinespec.PipelineTaskSpec_TriggerPolicy{
+						Strategy: pipelinespec.PipelineTaskSpec_TriggerPolicy_ALL_UPSTREAM_TASKS_COMPLETED,
+					},
+					Inputs: &pipelinespec.TaskInputsSpec{
+						Parameters: map[string]*pipelinespec.TaskInputsSpec_InputParameterSpec{
+							"message": common.InputParamTaskOutput("fail", "Output"),
+						},
+					},
+				},
+				Component: &pipelinespec.ComponentSpec{
+					InputDefinitions: &pipelinespec.ComponentInputsSpec{
+						Parameters: map[string]*pipelinespec.ComponentInputsSpec_ParameterSpec{
+							"message": {
+								ParameterType: pipelinespec.ParameterType_STRING,
+								IsOptional:    true,
+								DefaultValue:  structpb.NewStringValue("default"),
+							},
+						},
+					},
+				},
+			}
+
+			parameters, err := resolveParameters(opts)
+			require.NoError(t, err)
+			require.Len(t, parameters, 1)
+			assert.Equal(t, apiv2.IOType_COMPONENT_DEFAULT_INPUT, parameters[0].ParameterIO.GetType())
+			assert.Equal(t, "default", parameters[0].ParameterIO.GetValue().GetStringValue())
+		})
+	}
+}
+
+func TestResolveParameters_StillRejectsMissingOutputFromSuccessfulProducer(t *testing.T) {
+	parentTaskID := "parent-task"
+	opts := common.Options{
+		ParentTask:     &apiv2.PipelineTask{TaskId: parentTaskID, Name: "parent"},
+		IterationIndex: -1,
+		Run: &apiv2.Run{Tasks: []*apiv2.PipelineTask{{
+			TaskId:       "producer-task",
+			Name:         "produce",
+			ParentTaskId: util.StringPointer(parentTaskID),
+			Type:         apiv2.PipelineTask_RUNTIME,
+			State:        apiv2.PipelineTask_SUCCEEDED,
+		}}},
+		Task: &pipelinespec.PipelineTaskSpec{
+			TriggerPolicy: &pipelinespec.PipelineTaskSpec_TriggerPolicy{
+				Strategy: pipelinespec.PipelineTaskSpec_TriggerPolicy_ALL_UPSTREAM_TASKS_COMPLETED,
+			},
+			Inputs: &pipelinespec.TaskInputsSpec{
+				Parameters: map[string]*pipelinespec.TaskInputsSpec_InputParameterSpec{
+					"message": common.InputParamTaskOutput("produce", "Output"),
+				},
+			},
+		},
+		Component: &pipelinespec.ComponentSpec{
+			InputDefinitions: &pipelinespec.ComponentInputsSpec{
+				Parameters: map[string]*pipelinespec.ComponentInputsSpec_ParameterSpec{
+					"message": {
+						ParameterType: pipelinespec.ParameterType_STRING,
+						IsOptional:    true,
+						DefaultValue:  structpb.NewStringValue("default"),
+					},
+				},
+			},
+		},
+	}
+
+	_, err := resolveParameters(opts)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "parameter with producer key Output not found")
+}
+
 func TestResolveTaskOutputParameter_CollectionBoundary(t *testing.T) {
 	for _, producerType := range []apiv2.PipelineTask_TaskType{
 		apiv2.PipelineTask_RUNTIME, apiv2.PipelineTask_DAG, apiv2.PipelineTask_LOOP,
